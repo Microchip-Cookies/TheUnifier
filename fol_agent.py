@@ -32,7 +32,7 @@ def unify(symbols: dict, expr_1: list[Any], expr_2: list[Any], subs: list[Any]) 
     term_1 = expr_1[0]
     term_2 = expr_2[0]
     if term_1 == term_2:
-        return True
+        return unify(symbols, expr_1[1:], expr_2[1:], subs)
     # If either of the terms is a string, get the unifier
     unifier = []
     if type(term_1) is str or type(term_2) is str:
@@ -40,11 +40,29 @@ def unify(symbols: dict, expr_1: list[Any], expr_2: list[Any], subs: list[Any]) 
     if unifier[0] is None:
         return False
 
-    # Modify subs to incorporate new unifier term
-    _substitute(unifier, subs)
-    return unify(symbols, expr_1[1:], expr_2[1:], subs)
+    # Modify subs and remainder of expressions to incorporate new unifier term
+    _compose_subs(unifier, subs)
+    tail_1 = expr_1[1:]
+    tail_2 = expr_2[1:]
+    _substitute(unifier, tail_1)
+    _substitute(unifier, tail_2)
+    return unify(symbols, tail_1, tail_2, subs)
 
-def _substitute(new_sub: list[str], subs_list: list[Any]) -> None:
+def _substitute(new_sub:list[str], expr: list[Any]) -> None:
+    """
+    Seeks the given target value in the expression and replaces it in the expression with the replacement value.
+    :param new_sub: list of two strings in the form [target_val, replacement_val]
+    :param expr: partial or complete FOL expression as list, which may contain string and nested lists
+    :return: None
+    """
+    for i, element in enumerate(expr):
+        if type(element) is list:
+            _substitute(new_sub, element)
+        elif element == new_sub[0]:
+            expr[i] = new_sub[1]
+
+
+def _compose_subs(new_sub: list[str], subs_list: list[Any]) -> None:
     """
     Within the subs_list, replaces the term new_sub[0] with the term new_sub[1] within the subs_list.
     :param new_sub: a list of two strings
@@ -55,7 +73,7 @@ def _substitute(new_sub: list[str], subs_list: list[Any]) -> None:
     """
     for term in subs_list:
         if type(term[1]) is list:
-            _substitute(new_sub, [term[1]])
+            _compose_subs(new_sub, [term[1]])
         elif term[1] == new_sub[0]:
             term[1] = new_sub[1]
 
@@ -63,11 +81,13 @@ def _substitute(new_sub: list[str], subs_list: list[Any]) -> None:
         if term[0] == term[1]:
             del(subs_list[i])
 
-    subs_list.append[new_sub]
+    if new_sub:
+        subs_list.append(new_sub)
 
 def _get_unifier(term_1: str | list[Any], term_2: str | list[Any], symbols: dict) -> list[str] | None:
     """
-
+    Constructs and returns a unifier. Assumes that term_1 and term_2 are not empty, term_1 != term_2, and at least
+    one of the terms is a string.
     :param term_1: a term in a FOL statement
     :param term_2: a term in a FOL statement
     :return: the unifier, if one exists in the form [to_be_replaced, value_to_replace_with]
@@ -82,22 +102,31 @@ def _get_unifier(term_1: str | list[Any], term_2: str | list[Any], symbols: dict
         case 'constant', 'variable':
             return [term_2, term_1]
         case 'variable', 'function':
-            if term_1 in term_2:  # TODO: Replace this with a valid test
-                return None
-            return [term_1, term_2]
+            return None if _contains_var(term_1, term_2) else [term_1, term_2]
         case 'function', 'variable':
-            if term_2 in term_1:  # TODO: Replace this with a valid test
-                return None
-            return [term_2, term_1]
-        # case 'constant', 'function':
-        #     return None
-        # case 'function', 'constant':
-        #     return None
+            return None if _contains_var(term_2, term_1) else [term_2, term_1]
+        case 'variable', 'predicate':
+            return None if _contains_var(term_1, term_2) else [term_1, term_2]
+        case 'predicate', 'variable':
+            return None if _contains_var(term_2, term_1) else [term_2, term_1]
 
     return None
 
+def _contains_var(var: str, term_list: list[Any]) -> bool:
+    """
 
-def _symbol_type(symbol: str, symbols: dict) -> str:
+    :param var: a variable name
+    :param term_list: a list of FOL terms which may or may not include the variable, may contain nested lists
+    :return: True if var in term_list, False otherwise
+    """
+    for term in term_list:
+        if var == term:
+            return True
+        if type(term) is list:
+            if _contains_var(var, term): return True
+    return False
+
+def _symbol_type(symbol: str | list[Any], symbols: dict) -> str:
     """
     Symbol types include 'predicates', 'functions', 'variables', and 'constants'. If string, symbol must be
     found as a value in symbols. If list, symbol's first element must be a string found in symbols.
